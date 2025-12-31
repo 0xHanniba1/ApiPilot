@@ -60,5 +60,15 @@ class TestSuiteListResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SuiteCaseDetailResponse(BaseModel):
+    id: int
+    suite_id: int
+    test_case_id: int
+    sort_order: int
+    test_case: TestCaseListResponse
+
+    model_config = {"from_attributes": True}
+
+
 class TestSuiteDetailResponse(TestSuiteResponse):
-    cases: list[TestCaseListResponse] = []
+    cases: list[SuiteCaseDetailResponse] = []
