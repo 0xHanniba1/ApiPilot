@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.exceptions import ApiException
 from app.core.response import error
+from app.api.v1.router import api_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -31,6 +32,10 @@ async def api_exception_handler(request: Request, exc: ApiException):
         status_code=200,
         content=error(code=exc.code, message=exc.message, detail=exc.detail),
     )
+
+
+# Include API routers
+app.include_router(api_router)
 
 
 @app.get("/api/health")
