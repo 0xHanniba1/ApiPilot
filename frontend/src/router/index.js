@@ -55,6 +55,12 @@ const routes = [
         meta: { title: '定时任务', icon: 'Clock' },
       },
       {
+        path: 'schedules/:id/edit',
+        name: 'ScheduleEdit',
+        component: () => import('@/views/schedule/ScheduleEdit.vue'),
+        meta: { title: '编辑定时任务', hidden: true },
+      },
+      {
         path: 'executions',
         name: 'ExecutionList',
         component: () => import('@/views/execution/ExecutionList.vue'),
