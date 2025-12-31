@@ -36,6 +36,21 @@ class ExecuteSuiteRequest(BaseModel):
     environment_id: int
 
 
+class DebugAssertionConfig(BaseModel):
+    name: str = ""
+    type: str  # status_code/json_path/header/response_time/contains
+    expression: str = ""
+    operator: str = "eq"
+    expected_value: str = ""
+
+
+class DebugExtractorConfig(BaseModel):
+    source: str = "body"  # body/header/cookie
+    expression: str = ""
+    variable_name: str = ""
+    default_value: str | None = None
+
+
 class DebugExecuteRequest(BaseModel):
     environment_id: int
     method: str
@@ -44,6 +59,8 @@ class DebugExecuteRequest(BaseModel):
     params: dict = {}
     body_type: str = "none"
     body_content: str | None = None
+    assertions: list[DebugAssertionConfig] = []
+    extractors: list[DebugExtractorConfig] = []
 
 
 class TestExecutionResponse(BaseModel):
@@ -94,6 +111,7 @@ class TestExecutionDetailResponse(TestExecutionResponse):
 
 # Debug Response
 class DebugResponse(BaseModel):
+    status: str  # passed/failed/error
     request_url: str
     request_method: str
     request_headers: dict
@@ -102,3 +120,6 @@ class DebugResponse(BaseModel):
     response_headers: dict
     response_body: str
     duration_ms: int
+    assertion_results: list = []
+    extractor_results: dict = {}
+    error_message: str = ""
