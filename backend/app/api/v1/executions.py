@@ -191,15 +191,29 @@ async def execute_suite(
 async def list_executions(
     project_id: int = Query(None, description="项目ID"),
     suite_id: int = Query(None, description="测试集ID"),
-    status: str = Query(None, description="状态"),
+    trigger_type: str = Query(None, description="触发类型: manual/schedule/api"),
+    status: str = Query(None, description="状态: pending/running/passed/failed/error"),
+    start_date: str = Query(None, description="开始日期 YYYY-MM-DD"),
+    end_date: str = Query(None, description="结束日期 YYYY-MM-DD"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取执行记录列表"""
-    from sqlalchemy import func
+    """
+    获取执行记录列表
 
-    stmt = select(TestExecution)
+    支持按项目、测试集、触发类型、状态、日期范围筛选
+    """
+    from sqlalchemy import func
+    from datetime import datetime
+
+    stmt = (
+        select(TestExecution)
+        .options(
+            selectinload(TestExecution.test_suite),
+            selectinload(TestExecution.environment),
+        )
+    )
     count_stmt = select(func.count(TestExecution.id))
 
     # 通过测试集关联项目筛选
@@ -215,9 +229,29 @@ async def list_executions(
         stmt = stmt.where(TestExecution.suite_id == suite_id)
         count_stmt = count_stmt.where(TestExecution.suite_id == suite_id)
 
+    if trigger_type:
+        stmt = stmt.where(TestExecution.trigger_type == trigger_type)
+        count_stmt = count_stmt.where(TestExecution.trigger_type == trigger_type)
+
     if status:
         stmt = stmt.where(TestExecution.status == status)
         count_stmt = count_stmt.where(TestExecution.status == status)
+
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            stmt = stmt.where(TestExecution.created_at >= start_dt)
+            count_stmt = count_stmt.where(TestExecution.created_at >= start_dt)
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            stmt = stmt.where(TestExecution.created_at <= end_dt)
+            count_stmt = count_stmt.where(TestExecution.created_at <= end_dt)
+        except ValueError:
+            pass
 
     stmt = stmt.order_by(TestExecution.created_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
@@ -231,16 +265,20 @@ async def list_executions(
         {
             "id": e.id,
             "suite_id": e.suite_id,
+            "suite_name": e.test_suite.name if e.test_suite else None,
             "test_case_id": e.test_case_id,
             "environment_id": e.environment_id,
+            "environment_name": e.environment.name if e.environment else None,
             "trigger_type": e.trigger_type,
             "status": e.status,
             "total_count": e.total_count,
             "passed_count": e.passed_count,
             "failed_count": e.failed_count,
+            "pass_rate": round(e.passed_count / e.total_count * 100, 1) if e.total_count > 0 else 0,
             "duration_ms": e.duration_ms,
             "started_at": e.started_at,
             "finished_at": e.finished_at,
+            "created_at": e.created_at,
         }
         for e in executions
     ]
@@ -253,11 +291,56 @@ async def get_execution(
     execution_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """获取执行详情（用于轮询执行状态）"""
+    """获取执行概览（用于轮询执行状态）"""
     stmt = (
         select(TestExecution)
         .where(TestExecution.id == execution_id)
-        .options(selectinload(TestExecution.details))
+        .options(
+            selectinload(TestExecution.test_suite),
+            selectinload(TestExecution.environment),
+        )
+    )
+    result = await db.execute(stmt)
+    execution = result.scalar_one_or_none()
+
+    if not execution:
+        raise NotFoundError(f"执行记录不存在: {execution_id}")
+
+    return success(data={
+        "id": execution.id,
+        "suite_id": execution.suite_id,
+        "suite_name": execution.test_suite.name if execution.test_suite else None,
+        "test_case_id": execution.test_case_id,
+        "environment_id": execution.environment_id,
+        "environment_name": execution.environment.name if execution.environment else None,
+        "trigger_type": execution.trigger_type,
+        "status": execution.status,
+        "total_count": execution.total_count,
+        "passed_count": execution.passed_count,
+        "failed_count": execution.failed_count,
+        "skipped_count": execution.skipped_count,
+        "pass_rate": round(execution.passed_count / execution.total_count * 100, 1) if execution.total_count > 0 else 0,
+        "duration_ms": execution.duration_ms,
+        "started_at": execution.started_at,
+        "finished_at": execution.finished_at,
+        "created_at": execution.created_at,
+    })
+
+
+@router.get("/executions/{execution_id}/details", response_model=ResponseModel)
+async def get_execution_details(
+    execution_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取用例执行明细"""
+    from app.models.test_case import TestCase
+
+    stmt = (
+        select(TestExecution)
+        .where(TestExecution.id == execution_id)
+        .options(
+            selectinload(TestExecution.details).selectinload(ExecutionDetail.test_case)
+        )
     )
     result = await db.execute(stmt)
     execution = result.scalar_one_or_none()
@@ -270,6 +353,7 @@ async def get_execution(
             "id": d.id,
             "execution_id": d.execution_id,
             "test_case_id": d.test_case_id,
+            "test_case_name": d.test_case.name if d.test_case else None,
             "status": d.status,
             "request_url": d.request_url,
             "request_method": d.request_method,
@@ -279,8 +363,8 @@ async def get_execution(
             "response_headers": d.response_headers,
             "response_body": d.response_body,
             "duration_ms": d.duration_ms,
-            "assertion_results": d.assertion_results,
-            "extractor_results": d.extractor_results,
+            "assertion_results": d.assertion_results or [],
+            "extractor_results": d.extractor_results or {},
             "error_message": d.error_message,
             "executed_at": d.executed_at,
         }
@@ -288,19 +372,10 @@ async def get_execution(
     ]
 
     return success(data={
-        "id": execution.id,
-        "suite_id": execution.suite_id,
-        "test_case_id": execution.test_case_id,
-        "environment_id": execution.environment_id,
-        "trigger_type": execution.trigger_type,
-        "status": execution.status,
-        "total_count": execution.total_count,
-        "passed_count": execution.passed_count,
-        "failed_count": execution.failed_count,
-        "skipped_count": execution.skipped_count,
-        "duration_ms": execution.duration_ms,
-        "started_at": execution.started_at,
-        "finished_at": execution.finished_at,
-        "created_at": execution.created_at,
+        "execution_id": execution_id,
+        "total_count": len(details),
+        "passed_count": sum(1 for d in details if d["status"] == "passed"),
+        "failed_count": sum(1 for d in details if d["status"] == "failed"),
+        "error_count": sum(1 for d in details if d["status"] == "error"),
         "details": details,
     })
