@@ -43,6 +43,12 @@ const routes = [
         meta: { title: '测试集详情', hidden: true },
       },
       {
+        path: 'suites/:id/edit',
+        name: 'SuiteEdit',
+        component: () => import('@/views/suite/SuiteEdit.vue'),
+        meta: { title: '测试集编辑', hidden: true },
+      },
+      {
         path: 'schedules',
         name: 'ScheduleList',
         component: () => import('@/views/schedule/ScheduleList.vue'),
