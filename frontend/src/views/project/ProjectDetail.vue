@@ -117,7 +117,7 @@
                 </el-table-column>
                 <el-table-column label="操作" width="200" fixed="right">
                   <template #default="{ row }">
-                    <el-button type="primary" link size="small" @click="$router.push(`/cases/${row.id}/edit`)">
+                    <el-button type="primary" link size="small" @click="handleEditCase(row)">
                       编辑
                     </el-button>
                     <el-button type="success" link size="small" @click="handleExecuteCase(row)">
@@ -494,7 +494,14 @@ const handleCreateCase = () => {
     ElMessage.warning('请先选择模块')
     return
   }
-  router.push(`/cases/new?moduleId=${selectedModule.value.id}`)
+  // 保存项目 ID 用于环境选择
+  localStorage.setItem('lastProjectId', projectId.value)
+  router.push(`/cases/new/edit?moduleId=${selectedModule.value.id}&projectId=${projectId.value}`)
+}
+
+const handleEditCase = (testCase) => {
+  localStorage.setItem('lastProjectId', projectId.value)
+  router.push(`/cases/${testCase.id}/edit?projectId=${projectId.value}`)
 }
 
 const handleExecuteCase = async (testCase) => {
